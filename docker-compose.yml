@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: miip-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-miip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-miip}
+      POSTGRES_DB: ${POSTGRES_DB:-miip}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-miip}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

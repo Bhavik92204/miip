@@ -1,0 +1,82 @@
+[
+  {
+    "incident_id": "INC-SYN-001",
+    "alert_message": "CRITICAL: auth-service connection pool exhausted — HTTP 503s on all endpoints",
+    "log_lines": [
+      "2026-05-07T08:00:01Z ERROR [auth-service] HikariPool-1 - Connection is not available, request timed out after 30000ms",
+      "2026-05-07T08:00:02Z ERROR [auth-service] HikariPool-1 - Pool stats (total=50, active=50, idle=0, waiting=37)",
+      "2026-05-07T08:00:03Z WARN  [auth-service] Slow query detected (9812ms): SELECT * FROM user_sessions WHERE user_id=? AND expires_at > NOW()",
+      "2026-05-07T08:00:04Z ERROR [api-gateway] Upstream auth-service returned 503 Service Unavailable",
+      "2026-05-07T08:00:05Z ERROR [api-gateway] Circuit breaker OPEN for target=auth-service after 10 consecutive failures",
+      "2026-05-07T08:00:06Z ERROR [auth-service] FATAL: remaining connection slots are reserved for non-replication superuser connections",
+      "2026-05-07T08:00:08Z ERROR [auth-service] org.postgresql.util.PSQLException: FATAL: sorry, too many clients already",
+      "2026-05-07T08:00:10Z WARN  [auth-service] Active DB connections: 50/50 — pool exhaustion imminent for past 4 minutes"
+    ],
+    "question": "What is the root cause of the auth-service outage and what should be done first to restore service?",
+    "ground_truth": "The root cause is connection pool exhaustion on the auth-service caused by a slow query (9812ms) on the user_sessions table holding connections open far beyond normal duration. With all 50 pool slots consumed and 37 requests waiting, new connections are rejected and the API gateway's circuit breaker has opened. The immediate remediation is to kill the long-running sessions query, restart the connection pooler to flush stale connections, and add an index on user_sessions(user_id, expires_at) to prevent recurrence."
+  },
+  {
+    "incident_id": "INC-SYN-002",
+    "alert_message": "HIGH: payments-service memory usage at 94% — OOMKiller risk on payments-worker-3",
+    "log_lines": [
+      "2026-05-07T10:15:00Z INFO  [payments-worker-3] Heap usage: 7.6GB / 8GB (95%)",
+      "2026-05-07T10:15:10Z WARN  [payments-worker-3] GC overhead limit exceeded — full GC taking >2s",
+      "2026-05-07T10:15:22Z ERROR [payments-worker-3] java.lang.OutOfMemoryError: Java heap space at com.miip.payments.BatchProcessor.loadPendingTransactions(BatchProcessor.java:214)",
+      "2026-05-07T10:15:23Z ERROR [payments-worker-3] Batch job FAILED: job_id=batch-20260507-0400 after processing 142000/500000 records",
+      "2026-05-07T10:15:25Z WARN  [payments-service] Worker payments-worker-3 marked unhealthy after 3 failed health checks",
+      "2026-05-07T10:15:30Z ERROR [payments-service] Transaction processing degraded — capacity reduced to 2/3 workers",
+      "2026-05-07T10:15:45Z WARN  [k8s] OOMKilled: container payments-worker-3 (exit code 137) on node prod-node-7",
+      "2026-05-07T10:16:01Z INFO  [k8s] Restarting payments-worker-3 (restart count: 4 in last 30 minutes)"
+    ],
+    "question": "Why is the payments worker running out of memory and what is the safest way to stop the crash loop?",
+    "ground_truth": "The payments-worker-3 is OOMKilling due to a batch job (batch-20260507-0400) loading all 500,000 pending transaction records into the JVM heap at once inside BatchProcessor.loadPendingTransactions. The heap is exhausted at 7.6GB/8GB before processing completes, triggering OOMKiller. The worker has crashed 4 times in 30 minutes. The safest immediate steps are: reduce the batch size with pagination (e.g. 5,000 records per chunk), increase the pod memory limit temporarily to 12GB to stop the crash loop, and fix the batch query to stream results rather than materialising the full result set in memory."
+  },
+  {
+    "incident_id": "INC-SYN-003",
+    "alert_message": "HIGH: inventory-api p99 latency spiked to 18s — upstream calls to product-catalog timing out",
+    "log_lines": [
+      "2026-05-07T13:30:00Z WARN  [inventory-api] Response time 4210ms for GET /api/v1/inventory/check (threshold: 500ms)",
+      "2026-05-07T13:30:05Z ERROR [inventory-api] Timeout calling product-catalog-service after 5000ms: GET /catalog/products/batch",
+      "2026-05-07T13:30:06Z ERROR [inventory-api] RetryError: all 3 retry attempts exhausted for product-catalog-service",
+      "2026-05-07T13:30:10Z ERROR [product-catalog] Unhandled exception in CatalogController: java.net.SocketTimeoutException: Read timed out",
+      "2026-05-07T13:30:11Z ERROR [product-catalog] Redis connection refused: host=redis-primary:6379 — falling back to Postgres",
+      "2026-05-07T13:30:12Z WARN  [product-catalog] Postgres query took 12340ms: SELECT * FROM products WHERE id = ANY($1) — missing index on product_id",
+      "2026-05-07T13:30:15Z ERROR [inventory-api] Downstream failure rate: 87% over last 60s (target: <1%)",
+      "2026-05-07T13:30:20Z WARN  [redis-primary] Eviction policy maxmemory-policy=noeviction — memory at 100%, blocking writes"
+    ],
+    "question": "What is causing the inventory-api latency spike and which service should be fixed first?",
+    "ground_truth": "The inventory-api latency spike is caused by a cascading failure originating from Redis. Redis has exhausted its memory under the noeviction policy, causing it to block all writes and become unresponsive. Product-catalog-service fails to read from Redis and falls back to PostgreSQL, where a missing index on product_id causes a 12-second sequential scan. These slow Postgres queries cause product-catalog to exceed inventory-api's 5-second timeout, resulting in retries and an 87% downstream failure rate. Fix priority: (1) immediately increase Redis memory or change eviction policy to allkeys-lru to unblock writes, (2) add the missing index on products(product_id), (3) raise the inventory-api timeout temporarily while the root cause is resolved."
+  },
+  {
+    "incident_id": "INC-SYN-004",
+    "alert_message": "CRITICAL: prod-db-primary disk at 98% — PostgreSQL write operations failing",
+    "log_lines": [
+      "2026-05-07T16:45:00Z ERROR [postgres] could not write to file \"pg_wal/000000010000004B00000072\": No space left on device",
+      "2026-05-07T16:45:01Z ERROR [postgres] WAL writer process (PID 18234) was terminated by signal 6: Aborted",
+      "2026-05-07T16:45:02Z ERROR [postgres] terminating connection because of crash of another server process",
+      "2026-05-07T16:45:03Z ERROR [order-service] DataAccessException: could not execute statement — ERROR: could not write to file: No space left on device",
+      "2026-05-07T16:45:04Z ERROR [order-service] Failed to persist Order{id=ord-8821934, total=249.99} — rolling back transaction",
+      "2026-05-07T16:45:05Z WARN  [disk-monitor] /dev/xvdb1 usage: 98.2% (499.1GB / 508.0GB) on prod-db-primary",
+      "2026-05-07T16:45:06Z WARN  [postgres] Checkpoint target has been missed repeatedly — WAL accumulation detected (pg_wal size: 42GB)",
+      "2026-05-07T16:45:10Z ERROR [order-service] Health check FAILED — unable to write to database for past 120 seconds"
+    ],
+    "question": "What caused the disk to fill up and what is the fastest safe action to restore database writes?",
+    "ground_truth": "The disk exhaustion is caused by uncontrolled WAL (Write-Ahead Log) accumulation — pg_wal has grown to 42GB, indicating either a replication slot that has fallen behind and is preventing WAL recycling, or checkpoint intervals set too infrequently. The WAL writer process aborting has crashed PostgreSQL connections and all write operations are failing. The fastest safe recovery steps are: (1) identify and drop any stale replication slots (SELECT * FROM pg_replication_slots WHERE active = false) to allow WAL recycling, (2) run CHECKPOINT to trigger immediate WAL cleanup, (3) if slots are active, expand disk by at least 20GB immediately, (4) set wal_keep_size to a bounded value and configure log rotation. Do not simply delete WAL files manually as this will corrupt the database."
+  },
+  {
+    "incident_id": "INC-SYN-005",
+    "alert_message": "HIGH: notification-service error rate 62% — Stripe webhook delivery failures spiking",
+    "log_lines": [
+      "2026-05-07T19:00:00Z ERROR [notification-service] Stripe webhook delivery failed: POST https://api.stripe.com/v1/webhooks — 401 Unauthorized",
+      "2026-05-07T19:00:01Z ERROR [notification-service] Webhook signature verification failed: No signatures found matching the expected signature for payload",
+      "2026-05-07T19:00:02Z WARN  [notification-service] Retrying webhook (attempt 2/5): stripe_event_id=evt_1OxKL2LkdIwHu7ixFm9ZqPkA",
+      "2026-05-07T19:00:05Z ERROR [notification-service] Max retries exceeded for stripe_event_id=evt_1OxKL2LkdIwHu7ixFm9ZqPkA — event dead-lettered",
+      "2026-05-07T19:00:06Z WARN  [config-service] Secret rotation completed for STRIPE_WEBHOOK_SECRET at 18:58:02Z",
+      "2026-05-07T19:00:07Z ERROR [notification-service] 847 webhook events dead-lettered in last 120 seconds",
+      "2026-05-07T19:00:10Z WARN  [notification-service] Queue depth: 2341 pending Stripe events (normal: <50)",
+      "2026-05-07T19:00:15Z ERROR [billing-service] Payment confirmation emails delayed — awaiting notification-service recovery"
+    ],
+    "question": "Why are Stripe webhook deliveries failing and what is the exact fix needed?",
+    "ground_truth": "The webhook failures are caused by a STRIPE_WEBHOOK_SECRET rotation that completed at 18:58:02Z — two minutes before the failures began — without redeploying the notification-service. The running pods still hold the old secret in memory, so Stripe's HMAC signature on incoming webhooks no longer matches what the service computes, producing 401 Unauthorized and signature verification failures. 847 events have been dead-lettered with 2,341 more queued. The exact fix is: (1) redeploy notification-service so the pods pick up the new STRIPE_WEBHOOK_SECRET from the config store, (2) after the rollout, replay the dead-lettered events from the queue in chronological order, (3) implement a secret rotation runbook that includes a coordinated pod rollout to prevent this class of outage."
+  }
+]

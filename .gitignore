@@ -1,0 +1,28 @@
+# Secrets
+.env
+
+# Generated test artefacts
+test_memo.wav
+ruvector.db
+
+# Claude Code internals
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+
+# Pytest
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
