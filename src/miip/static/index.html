@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIIP — Multimodal Incident Intelligence Platform</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0f1117;
+    --card:      #161b22;
+    --card-hi:   #1c2330;
+    --border:    #21262d;
+    --border-hi: #30363d;
+    --accent:    #7c6af7;
+    --accent-hi: #9d8fff;
+    --accent-dim:#3d3480;
+    --text:      #e6edf3;
+    --text-muted:#8b949e;
+    --text-dim:  #484f58;
+    --green:     #3fb950;
+    --red:       #f85149;
+    --orange:    #d29922;
+    --yellow:    #e3b341;
+    --low:       #3fb950;
+    --medium:    #e3b341;
+    --high:      #d29922;
+    --critical:  #f85149;
+    --font-mono: 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+    --radius:    8px;
+    --radius-sm: 5px;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.5; overflow: hidden; }
+
+  /* ── Scrollbar ──────────────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+  /* ── Layout ─────────────────────────────────────────────────────────────── */
+  #root { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ── Top bar ────────────────────────────────────────────────────────────── */
+  #topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; height: 52px; min-height: 52px;
+    background: var(--card); border-bottom: 1px solid var(--border);
+    z-index: 10;
+  }
+  #topbar .brand { display: flex; align-items: center; gap: 10px; }
+  #topbar .brand-logo {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: linear-gradient(135deg, var(--accent) 0%, #4f3ec8 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; color: #fff; letter-spacing: -0.5px;
+  }
+  #topbar .brand-name { font-weight: 600; font-size: 15px; color: var(--text); }
+  #topbar .brand-tag { font-size: 11px; color: var(--text-muted); margin-left: 2px; }
+  #topbar .metrics { display: flex; gap: 32px; align-items: center; }
+  .metric { display: flex; flex-direction: column; align-items: flex-end; }
+  .metric-value { font-size: 18px; font-weight: 700; line-height: 1.1; color: var(--text); }
+  .metric-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+  .metric-value.accent { color: var(--accent-hi); }
+  .metric-value.green  { color: var(--green); }
+
+  /* ── Body ───────────────────────────────────────────────────────────────── */
+  #body { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Sidebar ────────────────────────────────────────────────────────────── */
+  #sidebar {
+    width: 220px; min-width: 220px;
+    background: var(--card); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 20px 0;
+    overflow-y: auto;
+  }
+  .sidebar-section { padding: 0 16px; margin-bottom: 28px; }
+  .sidebar-section-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 8px; padding: 0 4px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: var(--radius-sm);
+    color: var(--text-muted); font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+  .nav-item:hover { background: var(--card-hi); color: var(--text); }
+  .nav-item.active {
+    background: var(--accent-dim); color: var(--accent-hi);
+    border-color: var(--accent-dim);
+  }
+  .nav-icon { width: 16px; text-align: center; font-style: normal; }
+
+  .agent-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
+  .agent-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    flex-shrink: 0;
+    transition: all 0.3s;
+  }
+  .agent-dot.idle   { background: var(--text-dim); box-shadow: none; }
+  .agent-dot.active { background: var(--accent-hi); box-shadow: 0 0 8px var(--accent); animation: pulse-dot 1s infinite; }
+  .agent-dot.done   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .agent-name { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+  .agent-status-text { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+
+  .sidebar-footer { margin-top: auto; padding: 16px; border-top: 1px solid var(--border); }
+  .sidebar-footer p { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+  .ragas-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.3);
+    border-radius: 20px; padding: 2px 8px; margin-top: 6px;
+    font-size: 11px; color: var(--green);
+  }
+
+  /* ── Main ───────────────────────────────────────────────────────────────── */
+  #main { flex: 1; display: flex; gap: 0; overflow: hidden; }
+
+  /* ── Panels ─────────────────────────────────────────────────────────────── */
+  .panel {
+    flex: 1; display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .panel:first-child { border-right: 1px solid var(--border); }
+  .panel-header {
+    padding: 16px 24px 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .panel-title { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: 0.01em; }
+  .panel-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
+
+  /* ── Form elements ──────────────────────────────────────────────────────── */
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block; font-size: 12px; font-weight: 500;
+    color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.02em;
+  }
+  .field label span { color: var(--red); margin-left: 2px; }
+  .field input, .field select, .field textarea {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text); font-size: 13px;
+    padding: 9px 12px; outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    font-family: inherit;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,106,247,0.15);
+  }
+  .field textarea { resize: vertical; font-family: var(--font-mono); font-size: 12px; }
+  .field select { appearance: none; cursor: pointer; }
+  .field select option { background: var(--card); }
+
+  .field-row { display: flex; gap: 12px; }
+  .field-row .field { flex: 1; }
+
+  /* Severity select color coding */
+  #severity[data-val="low"]      { border-color: var(--low);      color: var(--low); }
+  #severity[data-val="medium"]   { border-color: var(--medium);   color: var(--medium); }
+  #severity[data-val="high"]     { border-color: var(--high);     color: var(--high); }
+  #severity[data-val="critical"] { border-color: var(--critical); color: var(--critical);
+                                   box-shadow: 0 0 0 1px var(--critical); }
+
+  /* ── Drop zones ─────────────────────────────────────────────────────────── */
+  .drop-zone {
+    border: 1.5px dashed var(--border-hi); border-radius: var(--radius);
+    padding: 20px; text-align: center; cursor: pointer;
+    transition: all 0.2s; background: var(--bg); position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent); background: rgba(124,106,247,0.05);
+  }
+  .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .drop-icon { font-size: 24px; margin-bottom: 6px; }
+  .drop-label { font-size: 12px; color: var(--text-muted); }
+  .drop-label strong { color: var(--accent-hi); }
+  .drop-accept { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+  .drop-files { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .drop-file-item {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card-hi); border-radius: 4px; padding: 5px 10px;
+    font-size: 11px; color: var(--text-muted); text-align: left;
+  }
+  .drop-file-item .remove {
+    margin-left: auto; cursor: pointer; color: var(--text-dim);
+    font-size: 14px; line-height: 1;
+  }
+  .drop-file-item .remove:hover { color: var(--red); }
+
+  /* ── Run button ─────────────────────────────────────────────────────────── */
+  #run-btn {
+    width: 100%; padding: 13px; margin-top: 4px;
+    background: var(--accent); border: none; border-radius: var(--radius);
+    color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+    letter-spacing: 0.03em; transition: all 0.2s;
+    position: relative; overflow: hidden;
+  }
+  #run-btn:not(:disabled):hover {
+    background: var(--accent-hi);
+    box-shadow: 0 0 24px rgba(124,106,247,0.5), 0 0 48px rgba(124,106,247,0.2);
+    transform: translateY(-1px);
+  }
+  #run-btn:not(:disabled):active { transform: translateY(0); box-shadow: none; }
+  #run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  #run-btn.loading { pointer-events: none; }
+  #run-btn.loading::after {
+    content: ''; position: absolute; right: 16px; top: 50%;
+    transform: translateY(-50%);
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+
+  /* ── Right panel states ─────────────────────────────────────────────────── */
+  #result-placeholder {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; gap: 12px; color: var(--text-dim);
+    text-align: center; padding: 40px;
+  }
+  #result-placeholder .ph-icon { font-size: 48px; opacity: 0.3; }
+  #result-placeholder p { font-size: 13px; line-height: 1.6; max-width: 280px; }
+
+  #result-content { display: none; }
+
+  /* ── Incident ID bar ────────────────────────────────────────────────────── */
+  .incident-id-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--card-hi); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px;
+  }
+  .incident-id-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .incident-id-value { font-family: var(--font-mono); font-size: 12px; color: var(--accent-hi); }
+  .incident-time { font-size: 11px; color: var(--text-dim); }
+
+  /* ── Agent badges ───────────────────────────────────────────────────────── */
+  .agent-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .agent-badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 20px;
+    font-size: 11px; font-weight: 600; font-family: var(--font-mono);
+    border: 1px solid var(--border); color: var(--text-dim);
+    background: var(--card-hi); opacity: 0; transform: translateY(6px);
+    transition: opacity 0.3s, transform 0.3s, border-color 0.3s, color 0.3s, background 0.3s;
+  }
+  .agent-badge.visible { opacity: 1; transform: translateY(0); }
+  .agent-badge.complete {
+    border-color: rgba(63,185,80,0.4); color: var(--green);
+    background: rgba(63,185,80,0.08);
+  }
+  .agent-badge .badge-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-dim); flex-shrink: 0; transition: background 0.3s;
+  }
+  .agent-badge.complete .badge-dot { background: var(--green); box-shadow: 0 0 4px var(--green); }
+
+  /* ── Section labels ─────────────────────────────────────────────────────── */
+  .result-section { margin-bottom: 24px; }
+  .result-section-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-dim);
+    margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .result-section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ── Markdown output ────────────────────────────────────────────────────── */
+  .md-output {
+    background: var(--card-hi); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 20px;
+    font-size: 13px; line-height: 1.7; color: var(--text);
+  }
+  .md-output h2 {
+    font-size: 13px; font-weight: 600; color: var(--accent-hi);
+    margin: 16px 0 6px; padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .md-output h2:first-child { margin-top: 0; }
+  .md-output h3 { font-size: 12px; font-weight: 600; color: var(--text); margin: 12px 0 4px; }
+  .md-output p { margin-bottom: 8px; }
+  .md-output ul, .md-output ol { margin: 4px 0 8px 18px; }
+  .md-output li { margin-bottom: 3px; }
+  .md-output code {
+    font-family: var(--font-mono); font-size: 11px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px 5px; color: var(--accent-hi);
+  }
+  .md-output pre {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px; margin: 8px 0;
+    overflow-x: auto;
+  }
+  .md-output pre code { background: none; border: none; padding: 0; color: var(--text-muted); }
+  .md-output strong { color: var(--text); font-weight: 600; }
+  .md-output blockquote {
+    border-left: 3px solid var(--accent); padding-left: 12px;
+    color: var(--text-muted); font-style: italic; margin: 8px 0;
+  }
+
+  /* ── Draft response with copy button ───────────────────────────────────── */
+  .draft-wrapper { position: relative; }
+  #copy-btn {
+    position: absolute; top: 10px; right: 10px;
+    padding: 4px 10px; font-size: 11px; font-weight: 500;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text-muted);
+    cursor: pointer; transition: all 0.15s;
+  }
+  #copy-btn:hover { border-color: var(--accent); color: var(--accent-hi); }
+  #copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+  /* ── Error display ──────────────────────────────────────────────────────── */
+  .error-box {
+    background: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.3);
+    border-radius: var(--radius); padding: 12px 16px;
+    font-size: 12px; color: var(--red); margin-bottom: 16px;
+  }
+
+  /* ── Elapsed time ───────────────────────────────────────────────────────── */
+  .elapsed-row {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 6px; margin-top: 16px; font-size: 11px; color: var(--text-dim);
+  }
+  .elapsed-value { color: var(--text-muted); font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+<div id="root">
+
+  <!-- Top bar -->
+  <header id="topbar">
+    <div class="brand">
+      <div class="brand-logo">M</div>
+      <div>
+        <div class="brand-name">MIIP</div>
+      </div>
+      <div class="brand-tag">Multimodal Incident Intelligence Platform</div>
+    </div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-value" id="m-active">0</div>
+        <div class="metric-label">Active Incidents</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value accent" id="m-avgtime">--</div>
+        <div class="metric-label">Avg Triage Time</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value green">0.91</div>
+        <div class="metric-label">Context Recall</div>
+      </div>
+    </div>
+  </header>
+
+  <div id="body">
+
+    <!-- Sidebar -->
+    <nav id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Navigation</div>
+        <div class="nav-item active" data-view="new"><i class="nav-icon">+</i> New Incident</div>
+        <div class="nav-item" data-view="past"><i class="nav-icon">&#9776;</i> Past Incidents</div>
+        <div class="nav-item" data-view="eval"><i class="nav-icon">&#9650;</i> Eval Results</div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Agent Status</div>
+        <div class="agent-row">
+          <div class="agent-dot" id="dot-router"></div>
+          <span class="agent-name">router</span>
+          <span class="agent-status-text" id="st-router">idle</span>
+        </div>
+        <div class="agent-row">
+          <div class="agent-dot" id="dot-log_rag"></div>
+          <span class="agent-name">log_rag</span>
+          <span class="agent-status-text" id="st-log_rag">idle</span>
+        </div>
+        <div class="agent-row">
+          <div class="agent-dot" id="dot-vision"></div>
+          <span class="agent-name">vision</span>
+          <span class="agent-status-text" id="st-vision">idle</span>
+        </div>
+        <div class="agent-row">
+          <div class="agent-dot" id="dot-asr"></div>
+          <span class="agent-name">asr</span>
+          <span class="agent-status-text" id="st-asr">idle</span>
+        </div>
+        <div class="agent-row">
+          <div class="agent-dot" id="dot-synthesis"></div>
+          <span class="agent-name">synthesis</span>
+          <span class="agent-status-text" id="st-synthesis">idle</span>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <p>RAGAS evaluation results</p>
+        <div class="ragas-chip">context_recall 0.91</div>
+        <div style="margin-top:4px">
+          <div class="ragas-chip" style="background:rgba(124,106,247,0.1);border-color:rgba(124,106,247,0.3);color:var(--accent-hi)">answer_rel 0.56</div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main two-panel area -->
+    <div id="main">
+
+      <!-- LEFT: Input form -->
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Incident Input</div>
+            <div class="panel-sub">Fill in alert details and log data to begin triage</div>
+          </div>
+        </div>
+        <div class="panel-body">
+
+          <div class="field-row">
+            <div class="field" style="flex:2">
+              <label>Alert Title <span>*</span></label>
+              <input id="title" type="text" placeholder="e.g. HikariPool-1 connection timeout" autocomplete="off">
+            </div>
+            <div class="field" style="flex:1">
+              <label>Severity <span>*</span></label>
+              <select id="severity" data-val="critical">
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+                <option value="critical" selected>critical</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Service Name <span>*</span></label>
+            <input id="service" type="text" placeholder="e.g. payments-api" autocomplete="off">
+          </div>
+
+          <div class="field">
+            <label>Description</label>
+            <textarea id="description" rows="2" placeholder="Brief description of the incident or alert context..."></textarea>
+          </div>
+
+          <div class="field">
+            <label>Log Lines <span>*</span></label>
+            <textarea id="log-lines" rows="9" placeholder="Paste raw log lines here, one per line...
+2026-05-09T18:00:01Z ERROR HikariPool-1 - Connection timeout after 30000ms
+2026-05-09T18:00:02Z ERROR Unable to acquire JDBC Connection
+2026-05-09T18:00:03Z WARN  HikariPool-1 - active=20, idle=0, waiting=14
+..."></textarea>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label>Dashboard Screenshot</label>
+              <div class="drop-zone" id="dz-screenshot">
+                <input type="file" id="file-screenshot" accept="image/*" multiple>
+                <div class="drop-icon">&#128444;</div>
+                <div class="drop-label"><strong>Drop image</strong> or click to browse</div>
+                <div class="drop-accept">PNG, JPG, WEBP</div>
+                <div class="drop-files" id="files-screenshot"></div>
+              </div>
+            </div>
+            <div class="field">
+              <label>Voice Memo</label>
+              <div class="drop-zone" id="dz-audio">
+                <input type="file" id="file-audio" accept="audio/*" multiple>
+                <div class="drop-icon">&#127908;</div>
+                <div class="drop-label"><strong>Drop audio</strong> or click to browse</div>
+                <div class="drop-accept">WAV, MP3, OGG</div>
+                <div class="drop-files" id="files-audio"></div>
+              </div>
+            </div>
+          </div>
+
+          <button id="run-btn" disabled>Run Triage</button>
+
+        </div>
+      </div>
+
+      <!-- RIGHT: Triage output -->
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Triage Report</div>
+            <div class="panel-sub" id="result-sub">Awaiting incident submission</div>
+          </div>
+          <div id="result-status-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text-dim);transition:all 0.3s"></div>
+        </div>
+        <div class="panel-body">
+
+          <!-- Placeholder -->
+          <div id="result-placeholder">
+            <div class="ph-icon">&#9741;</div>
+            <p>Submit an incident to generate a triage report. Agent analysis, root cause, severity, and draft response will appear here.</p>
+          </div>
+
+          <!-- Result content -->
+          <div id="result-content">
+
+            <div class="incident-id-bar">
+              <div>
+                <div class="incident-id-label">Incident ID</div>
+                <div class="incident-id-value" id="r-incident-id">--</div>
+              </div>
+              <div class="incident-time" id="r-time">--</div>
+            </div>
+
+            <div class="result-section">
+              <div class="result-section-label">Completed Agents</div>
+              <div class="agent-badges" id="r-badges"></div>
+            </div>
+
+            <div class="result-section" id="r-errors-section" style="display:none">
+              <div class="result-section-label">Errors</div>
+              <div class="error-box" id="r-errors"></div>
+            </div>
+
+            <div class="result-section" id="r-summary-section" style="display:none">
+              <div class="result-section-label">Triage Summary</div>
+              <div class="md-output" id="r-summary"></div>
+            </div>
+
+            <div class="result-section" id="r-draft-section" style="display:none">
+              <div class="result-section-label">Draft Incident Response</div>
+              <div class="draft-wrapper">
+                <div class="md-output" id="r-draft"></div>
+                <button id="copy-btn">Copy</button>
+              </div>
+            </div>
+
+            <div class="elapsed-row">
+              <span>Triage completed in</span>
+              <span class="elapsed-value" id="r-elapsed">--</span>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /#main -->
+  </div><!-- /#body -->
+</div><!-- /#root -->
+
+<script>
+(function () {
+  'use strict';
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  const state = {
+    triagedCount: 0,
+    totalElapsed: 0,
+    screenshotFiles: [],
+    audioFiles: [],
+  };
+
+  const AGENTS = ['router', 'log_rag', 'vision', 'asr', 'synthesis'];
+
+  // ── Severity select coloring ───────────────────────────────────────────────
+  const $severity = document.getElementById('severity');
+  function updateSeverityColor() {
+    $severity.dataset.val = $severity.value;
+  }
+  $severity.addEventListener('change', updateSeverityColor);
+
+  // ── Run button enable logic ────────────────────────────────────────────────
+  const $title    = document.getElementById('title');
+  const $service  = document.getElementById('service');
+  const $logLines = document.getElementById('log-lines');
+  const $runBtn   = document.getElementById('run-btn');
+
+  function checkReady() {
+    const ready = $title.value.trim() && $service.value.trim() && $logLines.value.trim();
+    $runBtn.disabled = !ready;
+  }
+  [$title, $service, $logLines].forEach(el => el.addEventListener('input', checkReady));
+
+  // ── Drop zone setup ────────────────────────────────────────────────────────
+  function setupDropZone(dzId, fileInputId, filesListId, fileStore, accept) {
+    const dz    = document.getElementById(dzId);
+    const input = document.getElementById(fileInputId);
+    const list  = document.getElementById(filesListId);
+
+    function renderFiles() {
+      list.innerHTML = '';
+      fileStore.forEach((f, i) => {
+        const item = document.createElement('div');
+        item.className = 'drop-file-item';
+        item.innerHTML = `<span>${f.name}</span><span class="remove" data-i="${i}">&#10005;</span>`;
+        list.appendChild(item);
+      });
+      list.querySelectorAll('.remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          fileStore.splice(Number(btn.dataset.i), 1);
+          renderFiles();
+        });
+      });
+    }
+
+    function addFiles(fileList) {
+      Array.from(fileList).forEach(f => fileStore.push(f));
+      renderFiles();
+    }
+
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('drag-over');
+      addFiles(e.dataTransfer.files);
+    });
+    input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
+  }
+
+  setupDropZone('dz-screenshot', 'file-screenshot', 'files-screenshot', state.screenshotFiles, 'image/*');
+  setupDropZone('dz-audio',      'file-audio',      'files-audio',      state.audioFiles,      'audio/*');
+
+  // ── Agent dots ─────────────────────────────────────────────────────────────
+  function setAgentState(name, agentState) {
+    const dot = document.getElementById('dot-' + name);
+    const st  = document.getElementById('st-'  + name);
+    if (!dot) return;
+    dot.className = 'agent-dot ' + agentState;
+    st.textContent = agentState === 'active' ? 'running' : agentState === 'done' ? 'done' : 'idle';
+  }
+
+  function resetAgents() { AGENTS.forEach(a => setAgentState(a, 'idle')); }
+
+  function animateAgentsCompleted(completed) {
+    let i = 0;
+    function tick() {
+      if (i >= AGENTS.length) return;
+      const name = AGENTS[i];
+      setAgentState(name, completed.includes(name) ? 'done' : 'idle');
+      i++;
+      setTimeout(tick, 180);
+    }
+    tick();
+  }
+
+  // ── Metrics ────────────────────────────────────────────────────────────────
+  function updateMetrics(elapsedMs) {
+    state.triagedCount++;
+    state.totalElapsed += elapsedMs;
+    document.getElementById('m-active').textContent = 0;
+    const avg = Math.round(state.totalElapsed / state.triagedCount / 100) / 10;
+    document.getElementById('m-avgtime').textContent = avg.toFixed(1) + 's';
+  }
+
+  // ── Result panel ───────────────────────────────────────────────────────────
+  const $placeholder = document.getElementById('result-placeholder');
+  const $content     = document.getElementById('result-content');
+  const $sub         = document.getElementById('result-sub');
+  const $statusDot   = document.getElementById('result-status-dot');
+
+  function showLoading() {
+    $placeholder.style.display = 'none';
+    $content.style.display = 'none';
+    $sub.textContent = 'Running pipeline...';
+    $statusDot.style.background = 'var(--accent-hi)';
+    $statusDot.style.boxShadow  = '0 0 8px var(--accent)';
+    $statusDot.style.animation  = 'pulse-dot 1s infinite';
+  }
+
+  function showResult(data, elapsedMs) {
+    $content.style.display = 'block';
+
+    // Incident ID
+    document.getElementById('r-incident-id').textContent = data.incident_id;
+    document.getElementById('r-time').textContent = new Date().toLocaleTimeString();
+    document.getElementById('r-elapsed').textContent = (elapsedMs / 1000).toFixed(2) + 's';
+
+    // Status dot
+    $statusDot.style.background = 'var(--green)';
+    $statusDot.style.boxShadow  = '0 0 6px var(--green)';
+    $statusDot.style.animation  = 'none';
+    $sub.textContent = 'Triage complete';
+
+    // Agent badges — render all, animate in, mark complete ones
+    const $badges = document.getElementById('r-badges');
+    $badges.innerHTML = '';
+    const completed = data.completed_agents || [];
+    AGENTS.forEach((name, idx) => {
+      const badge = document.createElement('div');
+      badge.className = 'agent-badge';
+      badge.innerHTML = `<div class="badge-dot"></div>${name}`;
+      $badges.appendChild(badge);
+      setTimeout(() => {
+        badge.classList.add('visible');
+        if (completed.includes(name)) badge.classList.add('complete');
+      }, idx * 120);
+    });
+
+    // Animate sidebar dots to reflect completed agents
+    setTimeout(() => animateAgentsCompleted(completed), 100);
+
+    // Errors
+    const $errSection = document.getElementById('r-errors-section');
+    const $errs       = document.getElementById('r-errors');
+    if (data.errors && data.errors.length > 0) {
+      $errs.textContent = data.errors.join('\n');
+      $errSection.style.display = 'block';
+    } else {
+      $errSection.style.display = 'none';
+    }
+
+    // Triage summary
+    const $sumSection = document.getElementById('r-summary-section');
+    const $sum        = document.getElementById('r-summary');
+    if (data.triage_summary) {
+      $sum.innerHTML = marked.parse(data.triage_summary);
+      $sumSection.style.display = 'block';
+    } else {
+      $sumSection.style.display = 'none';
+    }
+
+    // Draft response
+    const $draftSection = document.getElementById('r-draft-section');
+    const $draft        = document.getElementById('r-draft');
+    if (data.draft_response) {
+      $draft.innerHTML = marked.parse(data.draft_response);
+      $draftSection.style.display = 'block';
+    } else {
+      $draftSection.style.display = 'none';
+    }
+  }
+
+  function showError(msg) {
+    $content.style.display = 'block';
+    $sub.textContent = 'Pipeline error';
+    $statusDot.style.background = 'var(--red)';
+    $statusDot.style.boxShadow  = '0 0 6px var(--red)';
+    $statusDot.style.animation  = 'none';
+
+    document.getElementById('r-incident-id').textContent = '--';
+    document.getElementById('r-time').textContent = '--';
+    document.getElementById('r-elapsed').textContent = '--';
+    document.getElementById('r-badges').innerHTML = '';
+
+    const $errSection = document.getElementById('r-errors-section');
+    document.getElementById('r-errors').textContent = msg;
+    $errSection.style.display = 'block';
+    document.getElementById('r-summary-section').style.display = 'none';
+    document.getElementById('r-draft-section').style.display = 'none';
+  }
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
+  $runBtn.addEventListener('click', async () => {
+    const title       = $title.value.trim();
+    const severity    = $severity.value;
+    const service     = $service.value.trim();
+    const description = document.getElementById('description').value.trim();
+    const rawLogs     = $logLines.value.trim();
+
+    const logPaths = rawLogs.split('\n').map(l => l.trim()).filter(Boolean);
+
+    const body = {
+      alert: {
+        alert_id:    crypto.randomUUID(),
+        title,
+        severity,
+        service,
+        description: description || '',
+        timestamp:   new Date().toISOString(),
+        metadata:    {},
+      },
+      log_paths:        logPaths,
+      screenshot_paths: [],
+      voice_memo_paths: [],
+    };
+
+    // Activate loading state
+    $runBtn.disabled = true;
+    $runBtn.classList.add('loading');
+    $runBtn.textContent = 'Analysing...';
+    showLoading();
+    resetAgents();
+
+    // Animate agents as running in sequence (visual only — real completion shown in result)
+    AGENTS.forEach((name, i) => {
+      setTimeout(() => setAgentState(name, 'active'), i * 1400);
+    });
+
+    const t0 = performance.now();
+    try {
+      const res = await fetch('/api/v1/ingest', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+
+      const elapsed = performance.now() - t0;
+
+      if (!res.ok) {
+        const detail = await res.text();
+        showError(`HTTP ${res.status}: ${detail}`);
+      } else {
+        const data = await res.json();
+        showResult(data, elapsed);
+        updateMetrics(elapsed);
+      }
+    } catch (err) {
+      showError('Network error: ' + err.message);
+    } finally {
+      $runBtn.disabled = false;
+      $runBtn.classList.remove('loading');
+      $runBtn.textContent = 'Run Triage';
+      checkReady();
+    }
+  });
+
+  // ── Copy draft response ────────────────────────────────────────────────────
+  document.getElementById('copy-btn').addEventListener('click', function () {
+    const text = document.getElementById('r-draft').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      this.textContent = 'Copied!';
+      this.classList.add('copied');
+      setTimeout(() => {
+        this.textContent = 'Copy';
+        this.classList.remove('copied');
+      }, 2000);
+    });
+  });
+
+  // ── Nav ────────────────────────────────────────────────────────────────────
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      item.classList.add('active');
+    });
+  });
+
+})();
+</script>
+</body>
+</html>

@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     pagerduty_api_key: str = ""
     database_url: str = ""
 
+    # LangSmith
+    langchain_tracing_v2: str = "false"
+    langchain_api_key: str = ""
+    langchain_project: str = "miip-incident-triage"
+
     log_level: str = "INFO"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     vision_model: str = "llava-hf/llava-1.5-7b-hf"                        # local HF (future)

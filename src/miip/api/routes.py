@@ -48,8 +48,19 @@ async def ingest(payload: IngestRequest) -> IngestResponse:
         "completed_agents": [],
     }
 
+    trace_config = {
+        "run_name": f"incident-triage-{incident_id[:8]}",
+        "tags": ["miip", "incident-triage", payload.alert.get("severity", "unknown")],  # type: ignore[union-attr]
+        "metadata": {
+            "incident_id": incident_id,
+            "service":     payload.alert.get("service", ""),   # type: ignore[union-attr]
+            "severity":    payload.alert.get("severity", ""),  # type: ignore[union-attr]
+            "title":       payload.alert.get("title", ""),     # type: ignore[union-attr]
+        },
+    }
+
     try:
-        final_state: dict[str, Any] = await graph.ainvoke(initial_state)
+        final_state: dict[str, Any] = await graph.ainvoke(initial_state, config=trace_config)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
